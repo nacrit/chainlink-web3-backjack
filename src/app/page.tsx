@@ -3,6 +3,8 @@ import {useState, useEffect} from 'react';
 import {Card} from "@/app/api/route";
 import {ConnectButton} from "@rainbow-me/rainbowkit";
 import {useAccount, useSignMessage} from "wagmi";
+import {parseAbi, createPublicClient, createWalletClient, custom} from "viem";
+import {avalancheFuji} from "viem/chains";
 
 export default function Page() {
     const [message, setMessage] = useState<string>();
@@ -12,6 +14,8 @@ export default function Page() {
     const {address, isConnected} = useAccount();
     const [isSigned, setIsSigned] = useState<boolean>(false);
     const {signMessageAsync} = useSignMessage();
+    const [publicClient, setPublicClient] = useState<any>(null);
+    const [walletClient, setWalletClient] = useState<any>(null);
 
     const initialGame = async () => {
         const response = await fetch(`/api?address=${address}`, {
@@ -21,7 +25,48 @@ export default function Page() {
             }
         });
         await refreshData(response);
+
+        if (typeof window !== "undefined" && window.ethereum) {
+            const pc = createPublicClient({
+                chain: avalancheFuji,
+                transport: custom(window.ethereum)
+            });
+            const wc = createWalletClient({
+                chain: avalancheFuji,
+                transport: custom(window.ethereum)
+            });
+            setPublicClient(() => pc);
+            setWalletClient(wc);
+        } else {
+            console.error("window.ethereum is not available!");
+        }
     }
+
+    async function handleSignTx() {
+        // 1. 获取合约地址
+        const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+        // 2. 获取 abi （至少需要sendRequest函数的）
+        const contractAbi = parseAbi([process.env.NEXT_PUBLIC_CONTRACT_ABI || ""]);
+        // 3. 模拟交易：publicClient --> simulateContract
+        const res = await publicClient.simulateContract({
+            address: contractAddress as `0x${string}`,
+            abi: contractAbi,
+            functionName: "sendRequest",
+            args: [[address], address],
+            account: address,
+        });
+        console.log("模拟交易结果：", JSON.stringify(res));
+        // 4. 发送交易：walletClient --> writeContract
+        const txHash = await walletClient.writeContract({
+            address: contractAddress,
+            abi: contractAbi,
+            functionName: "sendRequest",
+            args: [[address], address],
+            account: address,
+        });
+        console.log("调用 sendRequest 成功，txHash =", txHash);
+    }
+
 
     useEffect(() => {
         console.log(`address=${address}, isConnected=${isConnected}`);
@@ -119,6 +164,7 @@ export default function Page() {
             <ConnectButton />
             <h1 className="text-3xl"> Welcome to Web3 game Balck jack </h1>
             <h2 className={`text-2xl ${message?.includes("wins") ? "bg-green-300" : "bg-amber-300"}`}> Score: {score} {message} </h2>
+            <button onClick={handleSignTx} className="border-black bg-blue-300 p-2 rounded-md">Get NFT</button>
             <div className="mt-4">
                 <h2>Dealer's hand</h2>
                 <div className="flex flex-row gap-2">
