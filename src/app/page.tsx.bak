@@ -1,0 +1,365 @@
+"use client"
+import {useState, useEffect} from 'react';
+import {Card} from "@/app/api/route";
+import {ConnectButton} from "@rainbow-me/rainbowkit";
+import {useAccount, useSignMessage} from "wagmi";
+import {parseAbi, createPublicClient, createWalletClient, custom} from "viem";
+import {avalancheFuji} from "viem/chains";
+
+export default function Page() {
+    const [message, setMessage] = useState<string>();
+    const [dealerHead, setDealerHead] = useState<Card[]>([]);
+    const [playerHead, setPlayerHead] = useState<Card[]>([]);
+    const [score, setScore] = useState<number>(0);
+    const {address, isConnected} = useAccount();
+    const [isSigned, setIsSigned] = useState<boolean>(false);
+    const {signMessageAsync} = useSignMessage();
+    const [publicClient, setPublicClient] = useState<any>(null);
+    const [walletClient, setWalletClient] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(false); // 添加加载状态
+    const [actionDisabled, setActionDisabled] = useState(false); // 添加按钮禁用状态
+
+    const initialGame = async () => {
+        setIsLoading(true);
+        try {
+            const response = await fetch(`/api?address=${address}`, {
+                method: "GET",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                }
+            });
+            await refreshData(response);
+
+            if (typeof window !== "undefined" && window.ethereum) {
+                const pc = createPublicClient({
+                    chain: avalancheFuji,
+                    transport: custom(window.ethereum)
+                });
+                const wc = createWalletClient({
+                    chain: avalancheFuji,
+                    transport: custom(window.ethereum)
+                });
+                setPublicClient(() => pc);
+                setWalletClient(wc);
+            } else {
+                console.error("window.ethereum is not available!");
+            }
+        } catch (error) {
+            console.error("Initial game error:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    async function handleSignTx() {
+        if (!publicClient || !walletClient) return;
+
+        setIsLoading(true);
+        setActionDisabled(true);
+        try {
+            const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+            const contractAbi = parseAbi([process.env.NEXT_PUBLIC_CONTRACT_ABI || ""]);
+
+            const res = await publicClient.simulateContract({
+                address: contractAddress as `0x${string}`,
+                abi: contractAbi,
+                functionName: "sendRequest",
+                args: [[address], address],
+                account: address,
+            });
+
+            const txHash = await walletClient.writeContract({
+                address: contractAddress,
+                abi: contractAbi,
+                functionName: "sendRequest",
+                args: [[address], address],
+                account: address,
+            });
+            console.log("调用 sendRequest 成功，txHash =", txHash);
+        } catch (error) {
+            console.error("Sign transaction error:", error);
+            alert("Transaction failed. Please try again.");
+        } finally {
+            setIsLoading(false);
+            setActionDisabled(false);
+        }
+    }
+
+    useEffect(() => {
+        console.log(`address=${address}, isConnected=${isConnected}`);
+    }, []);
+
+    async function handleHit() {
+        setIsLoading(true);
+        setActionDisabled(true);
+        try {
+            const response = await fetch("/api?address=" + address, {
+                method: "POST",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                },
+                body: JSON.stringify({ action: "hit" })
+            });
+            await refreshData(response);
+        } catch (error) {
+            console.error("Hit error:", error);
+        } finally {
+            setIsLoading(false);
+            setActionDisabled(false);
+        }
+    }
+
+    async function handleStand() {
+        setIsLoading(true);
+        setActionDisabled(true);
+        try {
+            const response = await fetch(`/api?address=${address}`, {
+                method: "POST",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                },
+                body: JSON.stringify({ action: "stand" })
+            });
+            await refreshData(response);
+        } catch (error) {
+            console.error("Stand error:", error);
+        } finally {
+            setIsLoading(false);
+            setActionDisabled(false);
+        }
+    }
+
+    async function handleReset() {
+        setIsLoading(true);
+        setActionDisabled(true);
+        try {
+            const response = await fetch(`/api?address=${address}`, {
+                method: "GET",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                }
+            });
+            await refreshData(response);
+        } catch (error) {
+            console.error("Reset error:", error);
+        } finally {
+            setIsLoading(false);
+            setActionDisabled(false);
+        }
+    }
+
+    async function refreshData(response: Response) {
+        if (response.status === 200) {
+            const data = await response.json();
+            setDealerHead(data.dealerHead);
+            setPlayerHead(data.playerHead);
+            setMessage(data.message);
+            setScore(data.score);
+        } else {
+            localStorage.removeItem("jwt");
+            setIsSigned(false);
+            alert(`${response.status}: ${(await response.json()).message}`);
+        }
+    }
+
+    async function handleSign() {
+        setIsLoading(true);
+        try {
+            const message = `Welcome to the game black jack at ${new Date().toString()}`;
+            const signature = await signMessageAsync({message});
+            const response = await fetch(`api?address=${address}`, {
+                method: "POST",
+                body: JSON.stringify({
+                    action: "auth",
+                    address,
+                    message,
+                    signature
+                })
+            });
+            if (response.status === 200) {
+                setIsSigned(true);
+                const {jsonwebtoken} = await response.json();
+                localStorage.setItem("jwt", jsonwebtoken)
+                await initialGame();
+            }
+        } catch (error) {
+            console.error("Sign error:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        if (isSigned && address) {
+            if (localStorage.getItem("jwt")) {
+                initialGame();
+            }
+        }
+        if (localStorage.getItem("jwt") && address) {
+            setIsSigned(true);
+        } else {
+            setIsSigned(false);
+            localStorage.removeItem("jwt");
+        }
+    }, [isSigned, address]);
+
+    if (!isSigned) {
+        return (
+            <div className="flex flex-col gap-6 items-center justify-center min-h-screen bg-gradient-to-b from-blue-900 to-purple-900 p-4">
+                <div className="w-full max-w-md bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
+                    <h1 className="text-3xl font-bold text-center text-white mb-6">Welcome to Web3 Blackjack</h1>
+
+                    <div className="flex justify-center mb-6">
+                        <ConnectButton />
+                    </div>
+
+                    <button
+                        onClick={handleSign}
+                        disabled={isLoading || !address}
+                        className={`w-full py-3 px-6 rounded-xl font-semibold transition-all duration-300 ${
+                            isLoading || !address
+                                ? "bg-gray-500 cursor-not-allowed"
+                                : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 active:scale-95"
+                        } text-white shadow-lg`}
+                    >
+                        {isLoading ? (
+                            <div className="flex items-center justify-center">
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Signing...
+                            </div>
+                        ) : "Sign with your wallet"}
+                    </button>
+                </div>
+            </div>
+        )
+    }
+
+    // 卡牌样式函数
+    const getCardColor = (suit: string) => {
+        switch(suit) {
+            case '♥': return 'text-red-600';
+            case '♦': return 'text-red-600';
+            case '♣': return 'text-black';
+            case '♠': return 'text-black';
+            default: return 'text-gray-800';
+        }
+    };
+
+    return (
+        <div className="flex flex-col items-center min-h-screen bg-gradient-to-b from-blue-900 to-purple-900 p-4">
+            {isLoading && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+                    <div className="flex flex-col items-center">
+                        <svg className="animate-spin h-12 w-12 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p className="mt-4 text-white text-lg">Processing...</p>
+                    </div>
+                </div>
+            )}
+
+            <div className="w-full max-w-4xl bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20">
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-3xl font-bold text-white">Web3 Blackjack</h1>
+                    <ConnectButton />
+                </div>
+
+                <div className={`text-center py-3 px-6 rounded-xl mb-6 transition-all duration-300 ${
+                    message?.includes("wins") ? "bg-gradient-to-r from-green-500 to-emerald-600" :
+                        message?.includes("bust") ? "bg-gradient-to-r from-red-500 to-rose-600" :
+                            "bg-gradient-to-r from-amber-500 to-orange-600"
+                }`}>
+                    <h2 className="text-2xl font-bold text-white">Score: {score}</h2>
+                    <p className="text-white">{message}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                    <div className="bg-black/30 rounded-xl p-6 border border-white/20">
+                        <h2 className="text-xl font-semibold text-white mb-4 text-center">Dealer's Hand</h2>
+                        <div className="flex flex-wrap justify-center gap-3 min-h-[180px]">
+                            {dealerHead.map((card, index) => (
+                                <div key={index} className="w-24 h-36 bg-white rounded-lg shadow-lg flex flex-col justify-between p-3 transform hover:scale-105 transition-transform">
+                                    <p className={`self-start text-lg font-bold ${getCardColor(card.suit)}`}>{card.rank}</p>
+                                    <p className={`self-center text-4xl ${getCardColor(card.suit)}`}>{card.suit}</p>
+                                    <p className={`self-end text-lg font-bold ${getCardColor(card.suit)}`}>{card.rank}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="bg-black/30 rounded-xl p-6 border border-white/20">
+                        <h2 className="text-xl font-semibold text-white mb-4 text-center">Your Hand</h2>
+                        <div className="flex flex-wrap justify-center gap-3 min-h-[180px]">
+                            {playerHead.map((card, index) => (
+                                <div key={index} className="w-24 h-36 bg-white rounded-lg shadow-lg flex flex-col justify-between p-3 transform hover:scale-105 transition-transform">
+                                    <p className={`self-start text-lg font-bold ${getCardColor(card.suit)}`}>{card.rank}</p>
+                                    <p className={`self-center text-4xl ${getCardColor(card.suit)}`}>{card.suit}</p>
+                                    <p className={`self-end text-lg font-bold ${getCardColor(card.suit)}`}>{card.rank}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-4 mb-6">
+                    {message === "" ? (
+                        <>
+                            <button
+                                onClick={handleHit}
+                                disabled={actionDisabled}
+                                className={`py-3 px-8 rounded-xl font-semibold transition-all duration-300 ${
+                                    actionDisabled
+                                        ? "bg-gray-500 cursor-not-allowed"
+                                        : "bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-95"
+                                } text-white shadow-lg`}
+                            >
+                                Hit
+                            </button>
+                            <button
+                                onClick={handleStand}
+                                disabled={actionDisabled}
+                                className={`py-3 px-8 rounded-xl font-semibold transition-all duration-300 ${
+                                    actionDisabled
+                                        ? "bg-gray-500 cursor-not-allowed"
+                                        : "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 active:scale-95"
+                                } text-white shadow-lg`}
+                            >
+                                Stand
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={handleReset}
+                            disabled={actionDisabled}
+                            className={`py-3 px-8 rounded-xl font-semibold transition-all duration-300 ${
+                                actionDisabled
+                                    ? "bg-gray-500 cursor-not-allowed"
+                                    : "bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 active:scale-95"
+                            } text-white shadow-lg`}
+                        >
+                            New Game
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex justify-center">
+                    <button
+                        onClick={handleSignTx}
+                        disabled={isLoading || actionDisabled}
+                        className={`py-3 px-8 rounded-xl font-semibold transition-all duration-300 ${
+                            isLoading || actionDisabled
+                                ? "bg-gray-500 cursor-not-allowed"
+                                : "bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 active:scale-95"
+                        } text-white shadow-lg`}
+                    >
+                        {isLoading ? "Minting..." : "Get NFT"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
