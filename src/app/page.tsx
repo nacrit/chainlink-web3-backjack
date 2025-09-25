@@ -25,21 +25,6 @@ export default function Page() {
             }
         });
         await refreshData(response);
-
-        if (typeof window !== "undefined" && window.ethereum) {
-            const pc = createPublicClient({
-                chain: avalancheFuji,
-                transport: custom(window.ethereum)
-            });
-            const wc = createWalletClient({
-                chain: avalancheFuji,
-                transport: custom(window.ethereum)
-            });
-            setPublicClient(() => pc);
-            setWalletClient(wc);
-        } else {
-            console.error("window.ethereum is not available!");
-        }
     }
 
     async function handleSignTx() {
@@ -66,11 +51,6 @@ export default function Page() {
         });
         console.log("调用 sendRequest 成功，txHash =", txHash);
     }
-
-
-    useEffect(() => {
-        console.log(`address=${address}, isConnected=${isConnected}`);
-    }, []);
 
     async function handleHit() {
         const response = await fetch("/api?address=" + address, {
@@ -137,6 +117,8 @@ export default function Page() {
     }
 
     useEffect(() => {
+        console.log(`address=${address}, isConnected=${isConnected}`);
+
         if (isSigned && address) {
             if (localStorage.getItem("jwt")) {
                 initialGame();
@@ -147,6 +129,21 @@ export default function Page() {
         } else {
             setIsSigned(false);
             localStorage.removeItem("jwt");
+        }
+
+        if (typeof window !== "undefined" && window.ethereum) {
+            const pc = createPublicClient({
+                chain: avalancheFuji,
+                transport: custom(window.ethereum)
+            });
+            const wc = createWalletClient({
+                chain: avalancheFuji,
+                transport: custom(window.ethereum)
+            });
+            setPublicClient(() => pc);
+            setWalletClient(() => wc);
+        } else {
+            console.error("window.ethereum is not available!");
         }
     }, [isSigned, address]);
 
