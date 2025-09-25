@@ -76,14 +76,14 @@ const initialDeck: { rank: string, suit: string }[] = ranks.map(rank => suits.ma
 
 
 const gameState: {
-    dealerHead: Card[],
-    playerHead: Card[],
+    dealerHand: Card[],
+    playerHand: Card[],
     deck: Card[],
     message: string,
     score: number,
 } = {
-    dealerHead: [],
-    playerHead: [],
+    dealerHand: [],
+    playerHand: [],
     deck: initialDeck,
     message: '',
     score: 0,
@@ -131,22 +131,22 @@ export async function GET(request: Request) {
         });
     }
 
-    gameState.dealerHead = [];
-    gameState.playerHead = [];
+    gameState.dealerHand = [];
+    gameState.playerHand = [];
     gameState.deck = initialDeck;
     gameState.message = "";
 
     const [playerCards, remainingCards] = getRandomCards(gameState.deck, 2);
     const [dealerCards, newCards] = getRandomCards(remainingCards, 2);
-    gameState.playerHead = playerCards;
-    gameState.dealerHead = dealerCards;
+    gameState.playerHand = playerCards;
+    gameState.dealerHand = dealerCards;
     gameState.deck = newCards;
     gameState.message = ""
 
     try {
         const playerScore = await getPlayerScore(address);
         gameState.score = playerScore != null ? playerScore.score | 0 : 0;
-        console.log(`Successfully get score for player: ${JSON.stringify(playerScore)}`);
+        // console.log(`Successfully get score for player: ${JSON.stringify(playerScore)}`);
     } catch (error) {
         console.error("Error initializing game state: ", error);
         return new Response(JSON.stringify({ message: "error fetching score from dynamoDB" }), {
@@ -154,8 +154,8 @@ export async function GET(request: Request) {
         });
     }
     return new Response(JSON.stringify({
-        dealerHead: [gameState.dealerHead[0], {"rank": "?", "suit": "?"} as Card],
-        playerHead: gameState.playerHead,
+        dealerHand: [gameState.dealerHand[0], {"rank": "?", "suit": "?"} as Card],
+        playerHand: gameState.playerHand,
         message: gameState.message,
         score: gameState.score,
     }), {
@@ -212,9 +212,9 @@ export async function POST(request: Request) {
     // 如果 分数是 < 21 可以继续 hit 或 stand
     if (action === "hit") {
         const [cards, newCards] = getRandomCards(gameState.deck, 1);
-        gameState.playerHead.push(...cards);
+        gameState.playerHand.push(...cards);
         gameState.deck = newCards;
-        let value = calculateHandValue(gameState.playerHead);
+        let value = calculateHandValue(gameState.playerHand);
         if (value === 21) {
             gameState.message = "Black Jack! Player wins!";
             gameState.score += 100;
@@ -230,13 +230,13 @@ export async function POST(request: Request) {
     // 如果 分数 > 21 hand就输了
     // 如果 分数是 < 21 可以继续 hit 或 stand
     else if (action === "stand") {
-        while (calculateHandValue(gameState.dealerHead) < 17) {
+        while (calculateHandValue(gameState.dealerHand) < 17) {
             const [cards, newCards] = getRandomCards(gameState.deck, 1);
-            gameState.dealerHead.push(...cards);
+            gameState.dealerHand.push(...cards);
             gameState.deck = newCards;
         }
-        const dealerValue = calculateHandValue(gameState.dealerHead);
-        const playerValue = calculateHandValue(gameState.playerHead);
+        const dealerValue = calculateHandValue(gameState.dealerHand);
+        const playerValue = calculateHandValue(gameState.playerHand);
         if (dealerValue === playerValue) {
             gameState.message = "Draw!";
         } else if (dealerValue > 21) {
@@ -262,8 +262,8 @@ export async function POST(request: Request) {
     }
 
     console.log(`message=${gameState.message}, 
-        dealerHead=${JSON.stringify(gameState.dealerHead)}, dealerScore=${calculateHandValue(gameState.dealerHead)},
-        playerHead=${JSON.stringify(gameState.playerHead)}, playerScore=${calculateHandValue(gameState.playerHead)}`);
+        dealerHand=${JSON.stringify(gameState.dealerHand)}, dealerScore=${calculateHandValue(gameState.dealerHand)},
+        playerHand=${JSON.stringify(gameState.playerHand)}, playerScore=${calculateHandValue(gameState.playerHand)}`);
     try {
         await putPlayerScore(address, gameState.score);
     } catch(error) {
@@ -274,8 +274,8 @@ export async function POST(request: Request) {
     }
 
     return new Response(JSON.stringify({
-        dealerHead: gameState.message === "" ? [gameState.dealerHead[0], {rank: "?", suit: "?"} as Card] : gameState.dealerHead,
-        playerHead: gameState.playerHead,
+        dealerHand: gameState.message === "" ? [gameState.dealerHand[0], {rank: "?", suit: "?"} as Card] : gameState.dealerHand,
+        playerHand: gameState.playerHand,
         message: gameState.message,
         score: gameState.score,
     }), {
@@ -284,10 +284,10 @@ export async function POST(request: Request) {
 }
 
 
-function calculateHandValue(playerHead: Card[]) {
+function calculateHandValue(playerHand: Card[]) {
     let value = 0;
     let aceCount = 0;
-    for (const card of playerHead) {
+    for (const card of playerHand) {
         if (card.rank === "A") {
             value += 11;
             aceCount++;

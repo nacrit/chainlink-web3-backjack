@@ -8,8 +8,8 @@ import {avalancheFuji} from "viem/chains";
 
 export default function Page() {
     const [message, setMessage] = useState<string>();
-    const [dealerHead, setDealerHead] = useState<Card[]>([]);
-    const [playerHead, setPlayerHead] = useState<Card[]>([]);
+    const [dealerHand, setDealerHand] = useState<Card[]>([]);
+    const [playerHand, setPlayerHand] = useState<Card[]>([]);
     const [score, setScore] = useState<number>(0);
     const {address, isConnected} = useAccount();
     const [isSigned, setIsSigned] = useState<boolean>(false);
@@ -105,8 +105,8 @@ export default function Page() {
     async function refreshData(response: Response) {
         if (response.status === 200) {
             const data = await response.json();
-            setDealerHead(data.dealerHead);
-            setPlayerHead(data.playerHead);
+            setDealerHand(data.dealerHand);
+            setPlayerHand(data.playerHand);
             setMessage(data.message);
             setScore(data.score);
         } else {
@@ -169,7 +169,7 @@ export default function Page() {
                 <h2>Dealer's hand</h2>
                 <div className="flex flex-row gap-2">
                     {
-                        dealerHead.map((card, index) => (
+                        dealerHand.map((card, index) => (
                                 <div key={index}
                                      className="w-32 h-42 border-1 border-black bg-white rounded-md flex flex-col justify-between">
                                     <p className="self-start p-2 text-lg">{card.rank}</p>
@@ -185,7 +185,7 @@ export default function Page() {
                 <h2>Player's hand</h2>
                 <div className="flex flex-row gap-2">
                     {
-                        playerHead.map((card, index) => (
+                        playerHand.map((card, index) => (
                                 <div key={index}
                                      className="w-32 h-42 border-1 border-black bg-white rounded-md flex flex-col justify-between">
                                     <p className="self-start p-2 text-lg">{card.rank}</p>
