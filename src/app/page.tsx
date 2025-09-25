@@ -1,10 +1,22 @@
 "use client"
 import {useState, useEffect} from 'react';
-import {Card} from "@/app/api/route";
 import {ConnectButton} from "@rainbow-me/rainbowkit";
 import {useAccount, useSignMessage} from "wagmi";
 import {parseAbi, createPublicClient, createWalletClient, custom} from "viem";
 import {avalancheFuji} from "viem/chains";
+
+// Type definitions
+interface Card {
+    rank: string;
+    suit: string;
+}
+
+// Extend Window interface for ethereum
+declare global {
+    interface Window {
+        ethereum?: any;
+    }
+}
 
 export default function Page() {
     const [message, setMessage] = useState<string>();
@@ -17,69 +29,106 @@ export default function Page() {
     const [publicClient, setPublicClient] = useState<any>(null);
     const [walletClient, setWalletClient] = useState<any>(null);
 
+    // Loading states
+    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [isSigningMessage, setIsSigningMessage] = useState<boolean>(false);
+    const [isSigningTx, setIsSigningTx] = useState<boolean>(false);
+    const [gameAction, setGameAction] = useState<string>("");
+
     const initialGame = async () => {
-        const response = await fetch(`/api?address=${address}`, {
-            method: "GET",
-            headers: {
-                "bearer": `Bearer ${localStorage.getItem("jwt")}`,
-            }
-        });
-        await refreshData(response);
+        setIsLoading(true);
+        try {
+            const response = await fetch(`/api?address=${address}`, {
+                method: "GET",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                }
+            });
+            await refreshData(response);
+        } finally {
+            setIsLoading(false);
+        }
     }
 
     async function handleSignTx() {
-        // 1. 获取合约地址
-        const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
-        // 2. 获取 abi （至少需要sendRequest函数的）
-        const contractAbi = parseAbi([process.env.NEXT_PUBLIC_CONTRACT_ABI || ""]);
-        // 3. 模拟交易：publicClient --> simulateContract
-        const res = await publicClient.simulateContract({
-            address: contractAddress as `0x${string}`,
-            abi: contractAbi,
-            functionName: "sendRequest",
-            args: [[address], address],
-            account: address,
-        });
-        console.log("模拟交易结果：", JSON.stringify(res));
-        // 4. 发送交易：walletClient --> writeContract
-        const txHash = await walletClient.writeContract({
-            address: contractAddress,
-            abi: contractAbi,
-            functionName: "sendRequest",
-            args: [[address], address],
-            account: address,
-        });
-        console.log("调用 sendRequest 成功，txHash =", txHash);
+        setIsSigningTx(true);
+        try {
+            const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+            const contractAbi = parseAbi([process.env.NEXT_PUBLIC_CONTRACT_ABI || ""]);
+            const res = await publicClient.simulateContract({
+                address: contractAddress as `0x${string}`,
+                abi: contractAbi,
+                functionName: "sendRequest",
+                args: [[address], address],
+                account: address,
+            });
+            console.log("模拟交易结果：", JSON.stringify(res));
+            const txHash = await walletClient.writeContract({
+                address: contractAddress,
+                abi: contractAbi,
+                functionName: "sendRequest",
+                args: [[address], address],
+                account: address,
+            });
+            console.log("调用 sendRequest 成功，txHash =", txHash);
+        } catch (error) {
+            console.error("Transaction failed:", error);
+        } finally {
+            setIsSigningTx(false);
+        }
     }
 
     async function handleHit() {
-        const response = await fetch("/api?address=" + address, {
-            method: "POST",
-            headers: {
-                "bearer": `Bearer ${localStorage.getItem("jwt")}`,
-            },
-            body: JSON.stringify({ action: "hit" })
-        });
-        await refreshData(response);
+        setGameAction("hit");
+        setIsLoading(true);
+        try {
+            const response = await fetch("/api?address=" + address, {
+                method: "POST",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                },
+                body: JSON.stringify({ action: "hit" })
+            });
+            await refreshData(response);
+        } finally {
+            setIsLoading(false);
+            setGameAction("");
+        }
     }
+
     async function handleStand() {
-        const response = await fetch(`/api?address=${address}`, {
-            method: "POST",
-            headers: {
-                "bearer": `Bearer ${localStorage.getItem("jwt")}`,
-            },
-            body: JSON.stringify({ action: "stand" })
-        });
-        await refreshData(response);
+        setGameAction("stand");
+        setIsLoading(true);
+        try {
+            const response = await fetch(`/api?address=${address}`, {
+                method: "POST",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                },
+                body: JSON.stringify({ action: "stand" })
+            });
+            await refreshData(response);
+        } finally {
+            setIsLoading(false);
+            setGameAction("");
+        }
     }
+
     async function handleReset() {
-        const response = await fetch(`/api?address=${address}`, {
-            method: "GET",
-            headers: {
-                "bearer": `Bearer ${localStorage.getItem("jwt")}`,
-            }
-        });
-        await refreshData(response);
+        setGameAction("reset");
+        setIsLoading(true);
+        try {
+            const response = await fetch(`/api?address=${address}`, {
+                method: "GET",
+                headers: {
+                    "bearer": `Bearer ${localStorage.getItem("jwt")}`,
+                }
+            });
+            await refreshData(response);
+        } finally {
+            setIsLoading(false);
+            setGameAction("");
+        }
     }
 
     async function refreshData(response: Response) {
@@ -97,28 +146,37 @@ export default function Page() {
     }
 
     async function handleSign() {
-        const message = `Welcome to the game black jack at ${new Date().toString()}`;
-        const signature = await signMessageAsync({message});
-        const response = await fetch(`api?address=${address}`, {
-            method: "POST",
-            body: JSON.stringify({
-                action: "auth",
-                address,
-                message,
-                signature
-            })
-        });
-        if (response.status === 200) {
-            setIsSigned(true);
-            const {jsonwebtoken} = await response.json();
-            localStorage.setItem("jwt", jsonwebtoken)
-            await initialGame();
+        setIsSigningMessage(true);
+        try {
+            const message = `Welcome to the game black jack at ${new Date().toString()}`;
+            const signature = await signMessageAsync({
+                account: address as `0x${string}`,
+                message
+            });
+            const response = await fetch(`api?address=${address}`, {
+                method: "POST",
+                body: JSON.stringify({
+                    action: "auth",
+                    address,
+                    message,
+                    signature
+                })
+            });
+            if (response.status === 200) {
+                setIsSigned(true);
+                const {jsonwebtoken} = await response.json();
+                localStorage.setItem("jwt", jsonwebtoken)
+                await initialGame();
+            }
+        } catch (error) {
+            console.error("Signing failed:", error);
+        } finally {
+            setIsSigningMessage(false);
         }
     }
 
     useEffect(() => {
         console.log(`address=${address}, isConnected=${isConnected}`);
-
         if (isSigned && address) {
             if (localStorage.getItem("jwt")) {
                 initialGame();
@@ -130,7 +188,6 @@ export default function Page() {
             setIsSigned(false);
             localStorage.removeItem("jwt");
         }
-
         if (typeof window !== "undefined" && window.ethereum) {
             const pc = createPublicClient({
                 chain: avalancheFuji,
@@ -141,70 +198,207 @@ export default function Page() {
                 transport: custom(window.ethereum)
             });
             setPublicClient(() => pc);
-            setWalletClient(() => wc);
+            setWalletClient(wc);
         } else {
             console.error("window.ethereum is not available!");
         }
     }, [isSigned, address]);
 
+    // Card component with improved styling
+    const GameCard = ({ card, isHidden = false }: { card: Card, isHidden?: boolean }) => {
+        const isRed = card.suit === "♥️" || card.suit === "♦️";
+
+        if (isHidden) {
+            return (
+                <div className="w-24 h-36 bg-gradient-to-br from-blue-800 to-purple-900 rounded-xl shadow-card border-2 border-casino-gold/20 flex items-center justify-center transform transition-all duration-300 hover:scale-105">
+                    <div className="text-casino-gold text-2xl">🂠</div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="w-24 h-36 bg-gradient-card rounded-xl shadow-card border border-gray-200 flex flex-col justify-between p-2 transform transition-all duration-300 hover:scale-110">
+                <div className={`text-sm font-bold ${isRed ? 'text-card-red' : 'text-card-black'}`}>
+                    {card.rank}
+                </div>
+                <div className={`text-3xl self-center ${isRed ? 'text-card-red' : 'text-card-black'}`}>
+                    {card.suit}
+                </div>
+                <div className={`text-sm font-bold self-end rotate-180 ${isRed ? 'text-card-red' : 'text-card-black'}`}>
+                    {card.rank}
+                </div>
+            </div>
+        );
+    };
+
+    // Loading spinner component
+    const LoadingSpinner = () => (
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-casino-gold"></div>
+    );
+
     if (!isSigned) {
         return (
-            <div className="flex flex-col gap-2 items-center justify-center h-screen">
-                <ConnectButton />
-                <button onClick={handleSign} hidden={!address} className="border-black bg-blue-300 p-2 rounded-md">Sign with your wallet</button>
+            <div className="min-h-screen bg-gradient-casino flex flex-col items-center justify-center p-8">
+                <div className="bg-secondary/50 backdrop-blur-lg rounded-2xl p-12 shadow-glow border border-casino-gold/20 max-w-md w-full text-center">
+                    <div className="mb-8">
+                        <h1 className="text-4xl font-bold text-casino-gold mb-2">🃏 BlackJack</h1>
+                        <p className="text-foreground/80 text-lg">Welcome to the Casino</p>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div className="flex justify-center">
+                            <ConnectButton />
+                        </div>
+
+                        {address && (
+                            <button
+                                onClick={handleSign}
+                                disabled={isSigningMessage}
+                                className="w-full bg-gradient-gold hover:shadow-button active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-casino-felt font-bold py-4 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-3"
+                            >
+                                {isSigningMessage ? (
+                                    <>
+                                        <LoadingSpinner />
+                                        Signing Message...
+                                    </>
+                                ) : (
+                                    <>
+                                        🔐 Sign with Wallet
+                                    </>
+                                )}
+                            </button>
+                        )}
+                    </div>
+                </div>
             </div>
-        )
+        );
     }
 
     return (
-        <div className="flex flex-col gap-2 items-center justify-center h-screen">
-            <ConnectButton />
-            <h1 className="text-3xl"> Welcome to Web3 game Balck jack </h1>
-            <h2 className={`text-2xl ${message?.includes("wins") ? "bg-green-300" : "bg-amber-300"}`}> Score: {score} {message} </h2>
-            <button onClick={handleSignTx} className="border-black bg-blue-300 p-2 rounded-md">Get NFT</button>
-            <div className="mt-4">
-                <h2>Dealer's hand</h2>
-                <div className="flex flex-row gap-2">
-                    {
-                        dealerHand.map((card, index) => (
-                                <div key={index}
-                                     className="w-32 h-42 border-1 border-black bg-white rounded-md flex flex-col justify-between">
-                                    <p className="self-start p-2 text-lg">{card.rank}</p>
-                                    <p className="self-center p-2 text-3xl">{card.suit}</p>
-                                    <p className="self-end p-2 text-lg">{card.rank}</p>
-                                </div>
-                            )
-                        )
-                    }
+        <div className="min-h-screen bg-gradient-casino flex flex-col items-center p-4">
+            {/* Header */}
+            <div className="w-full max-w-4xl flex justify-between items-center mb-8 pt-4">
+                <div className="flex items-center gap-4">
+                    <h1 className="text-3xl font-bold text-casino-gold">🃏 BlackJack</h1>
+                    <div className="bg-secondary/50 backdrop-blur-lg px-4 py-2 rounded-lg border border-casino-gold/20">
+                        <span className="text-casino-gold font-bold text-lg">Score: {score}</span>
+                    </div>
                 </div>
+                <ConnectButton />
             </div>
-            <div className="mt-2">
-                <h2>Player's hand</h2>
-                <div className="flex flex-row gap-2">
-                    {
-                        playerHand.map((card, index) => (
-                                <div key={index}
-                                     className="w-32 h-42 border-1 border-black bg-white rounded-md flex flex-col justify-between">
-                                    <p className="self-start p-2 text-lg">{card.rank}</p>
-                                    <p className="self-center p-2 text-3xl">{card.suit}</p>
-                                    <p className="self-end p-2 text-lg">{card.rank}</p>
-                                </div>
-                            )
-                        )
-                    }
-                </div>
-            </div>
-            <div className="flex flex-row gap-2 mt-4">
-                {
-                    message === "" ?
-                        <>
-                            <button onClick={handleHit} className="bg-blue-300 rounded-md p-2">Hit</button>
-                            <button onClick={handleStand} className="bg-blue-300 rounded-md p-2">Stand</button>
-                        </> :
-                        <button onClick={handleReset} className="bg-blue-300 rounded-md p-2">Reset</button>
-                }
 
+            {/* Game Status */}
+            {message && (
+                <div className={`mb-6 px-6 py-3 rounded-xl font-bold text-lg ${
+                    message.includes("wins")
+                        ? "bg-accent/20 text-accent border border-accent/30"
+                        : message.includes("loses") || message.includes("Bust")
+                            ? "bg-destructive/20 text-destructive border border-destructive/30"
+                            : "bg-casino-gold/20 text-casino-gold border border-casino-gold/30"
+                }`}>
+                    {message}
+                </div>
+            )}
+
+            {/* NFT Button */}
+            <button
+                onClick={handleSignTx}
+                disabled={isSigningTx || score < 1000}
+                className="mb-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-button active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-3"
+            >
+                {isSigningTx ? (
+                    <>
+                        <LoadingSpinner />
+                        Minting NFT...
+                    </>
+                ) : (
+                    <>
+                        🎁 Get NFT Reward
+                    </>
+                )}
+            </button>
+
+            {/* Game Table */}
+            <div className="bg-secondary/30 backdrop-blur-lg rounded-2xl p-8 shadow-glow border border-casino-gold/20 max-w-4xl w-full">
+                {/* Dealer Section */}
+                <div className="mb-8">
+                    <div className="flex items-center gap-3 mb-4">
+                        <h2 className="text-xl font-bold text-foreground">🎩 Dealer</h2>
+                        {isLoading && gameAction && (
+                            <div className="text-muted-foreground text-sm flex items-center gap-2">
+                                <LoadingSpinner />
+                                Processing...
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap gap-3 justify-center min-h-[9rem]">
+                        {dealerHand.map((card, index) => (
+                            <GameCard key={index} card={card} />
+                        ))}
+                    </div>
+                </div>
+
+                {/* Player Section */}
+                <div className="mb-8">
+                    <h2 className="text-xl font-bold text-foreground mb-4">👤 Your Hand</h2>
+                    <div className="flex flex-wrap gap-3 justify-center min-h-[9rem]">
+                        {playerHand.map((card, index) => (
+                            <GameCard key={index} card={card} />
+                        ))}
+                    </div>
+                </div>
+
+                {/* Game Controls */}
+                <div className="flex gap-4 justify-center">
+                    {message === "" ? (
+                        <>
+                            <button
+                                onClick={handleHit}
+                                disabled={isLoading}
+                                className="bg-accent hover:bg-accent/80 hover:shadow-button active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed font-bold py-3 px-8 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 min-w-[120px]"
+                            >
+                                {isLoading && gameAction === "hit" ? (
+                                    <LoadingSpinner />
+                                ) : (
+                                    <>
+                                        🎯 Hit
+                                    </>
+                                )}
+                            </button>
+                            <button
+                                onClick={handleStand}
+                                disabled={isLoading}
+                                className="bg-destructive hover:bg-destructive/80 hover:shadow-button active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-destructive-foreground font-bold py-3 px-8 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 min-w-[120px]"
+                            >
+                                {isLoading && gameAction === "stand" ? (
+                                    <LoadingSpinner />
+                                ) : (
+                                    <>
+                                        ✋ Stand
+                                    </>
+                                )}
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={handleReset}
+                            disabled={isLoading}
+                            className="bg-gradient-gold hover:shadow-button active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-casino-felt font-bold py-3 px-8 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 min-w-[150px]"
+                        >
+                            {isLoading && gameAction === "reset" ? (
+                                <>
+                                    <LoadingSpinner />
+                                    Starting...
+                                </>
+                            ) : (
+                                <>
+                                    🔄 New Game
+                                </>
+                            )}
+                        </button>
+                    )}
+                </div>
             </div>
         </div>
-    )
+    );
 }

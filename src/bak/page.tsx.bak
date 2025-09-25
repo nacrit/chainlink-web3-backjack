@@ -8,8 +8,8 @@ import {avalancheFuji} from "viem/chains";
 
 export default function Page() {
     const [message, setMessage] = useState<string>();
-    const [dealerHead, setDealerHead] = useState<Card[]>([]);
-    const [playerHead, setPlayerHead] = useState<Card[]>([]);
+    const [dealerHand, setDealerHand] = useState<Card[]>([]);
+    const [playerHand, setPlayerHand] = useState<Card[]>([]);
     const [score, setScore] = useState<number>(0);
     const {address, isConnected} = useAccount();
     const [isSigned, setIsSigned] = useState<boolean>(false);
@@ -151,8 +151,8 @@ export default function Page() {
     async function refreshData(response: Response) {
         if (response.status === 200) {
             const data = await response.json();
-            setDealerHead(data.dealerHead);
-            setPlayerHead(data.playerHead);
+            setDealerHand(data.dealerHand);
+            setPlayerHand(data.playerHand);
             setMessage(data.message);
             setScore(data.score);
         } else {
@@ -281,7 +281,7 @@ export default function Page() {
                     <div className="bg-black/30 rounded-xl p-6 border border-white/20">
                         <h2 className="text-xl font-semibold text-white mb-4 text-center">Dealer's Hand</h2>
                         <div className="flex flex-wrap justify-center gap-3 min-h-[180px]">
-                            {dealerHead.map((card, index) => (
+                            {dealerHand.map((card, index) => (
                                 <div key={index} className="w-24 h-36 bg-white rounded-lg shadow-lg flex flex-col justify-between p-3 transform hover:scale-105 transition-transform">
                                     <p className={`self-start text-lg font-bold ${getCardColor(card.suit)}`}>{card.rank}</p>
                                     <p className={`self-center text-4xl ${getCardColor(card.suit)}`}>{card.suit}</p>
@@ -294,7 +294,7 @@ export default function Page() {
                     <div className="bg-black/30 rounded-xl p-6 border border-white/20">
                         <h2 className="text-xl font-semibold text-white mb-4 text-center">Your Hand</h2>
                         <div className="flex flex-wrap justify-center gap-3 min-h-[180px]">
-                            {playerHead.map((card, index) => (
+                            {playerHand.map((card, index) => (
                                 <div key={index} className="w-24 h-36 bg-white rounded-lg shadow-lg flex flex-col justify-between p-3 transform hover:scale-105 transition-transform">
                                     <p className={`self-start text-lg font-bold ${getCardColor(card.suit)}`}>{card.rank}</p>
                                     <p className={`self-center text-4xl ${getCardColor(card.suit)}`}>{card.suit}</p>
